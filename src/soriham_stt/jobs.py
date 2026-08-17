@@ -106,6 +106,8 @@ class JobWorker(threading.Thread):
             if job is None:
                 continue
             self._process(job)
+            # 잡이 연속 유입돼도 TTL 정리가 멈추지 않게 처리 직후에도 sweep
+            self._store.sweep(self._job_ttl)
 
     def _process(self, job: Job) -> None:
         job.status = "running"
