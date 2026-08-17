@@ -18,6 +18,9 @@ mlx = [
 cpu = [
     "faster-whisper>=1.2",
 ]
+diarize = [
+    "pyannote.audio>=4.0",
+]
 
 [dependency-groups]
 dev = [
@@ -25,6 +28,17 @@ dev = [
     "pytest>=9.1",
     "ruff>=0.16",
 ]
+
+# 리눅스(도커 CPU 이미지)에서 torch 계열이 CUDA 휠로 풀리지 않도록 CPU 인덱스 고정
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torchaudio = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torchcodec = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 
 [build-system]
 requires = ["uv_build>=0.11,<0.12"]
