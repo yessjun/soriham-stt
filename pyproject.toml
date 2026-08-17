@@ -11,6 +11,14 @@ dependencies = [
     "uvicorn>=0.52",
 ]
 
+[project.optional-dependencies]
+mlx = [
+    "mlx-whisper>=0.4.3; platform_system == 'Darwin' and platform_machine == 'arm64'",
+]
+cpu = [
+    "faster-whisper>=1.2",
+]
+
 [dependency-groups]
 dev = [
     "httpx>=0.28",

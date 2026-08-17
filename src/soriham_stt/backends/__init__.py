@@ -29,10 +29,16 @@ def detect_device(forced: str | None = None) -> str:
 
 def select_backend(settings: Settings) -> TranscribeBackend:
     device = detect_device(settings.device)
-    if device == "mlx":
-        from soriham_stt.backends.mlx import MlxWhisperBackend
+    try:
+        if device == "mlx":
+            from soriham_stt.backends.mlx import MlxWhisperBackend
 
-        return MlxWhisperBackend()
-    from soriham_stt.backends.fwhisper import FasterWhisperBackend
+            return MlxWhisperBackend()
+        from soriham_stt.backends.fwhisper import FasterWhisperBackend
 
-    return FasterWhisperBackend(device=device)
+        return FasterWhisperBackend(device=device)
+    except ModuleNotFoundError as exc:
+        extra = "mlx" if device == "mlx" else "cpu"
+        raise RuntimeError(
+            f"{device} 백엔드 의존성이 없습니다. `uv sync --extra {extra}`로 설치하세요"
+        ) from exc
