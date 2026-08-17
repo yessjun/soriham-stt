@@ -53,6 +53,9 @@ docker run -p 8100:8100 -v hf-cache:/data/hf -e HF_TOKEN=<hf-token> \
   ghcr.io/yessjun/soriham-stt:latest
 ```
 
+컨테이너는 호출자와 파일시스템을 공유하지 않으므로 호출 측에서 업로드 모드를
+쓰거나, 오디오 폴더를 볼륨으로 마운트하고 `STT_SHARED_DIR`를 지정합니다.
+
 ## 전체 아키텍처
 
 <!-- arch:begin -->
