@@ -6,7 +6,6 @@
 GPU에서도 같은 계약으로 동작합니다.
 
 스택: Python 3.12+, FastAPI, mlx-whisper/faster-whisper, pyannote.audio, Docker.
-whisper 백엔드와 화자분리는 구현 중이고, 잡 API 계약은 아래대로 확정입니다.
 
 ## HTTP 잡 API
 
@@ -39,9 +38,19 @@ GET  /health      → {"device": "mlx|cuda|cpu", "model", "versions"}
 
 ### 실행
 
+로컬(백엔드는 실행 환경에 맞는 extra 선택 — Apple Silicon은 `mlx`, 그 외 `cpu`,
+화자분리는 `diarize` 추가):
+
 ```bash
-uv sync
+uv sync --extra mlx --extra diarize
 uv run uvicorn --factory soriham_stt.server:create_app --host 0.0.0.0 --port 8100
+```
+
+도커(CPU 백엔드 + 화자분리 포함, 모델 가중치는 `/data/hf` 볼륨에 캐시):
+
+```bash
+docker run -p 8100:8100 -v hf-cache:/data/hf -e HF_TOKEN=<hf-token> \
+  ghcr.io/yessjun/soriham-stt:latest
 ```
 
 ## 전체 아키텍처
