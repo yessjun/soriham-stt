@@ -20,6 +20,11 @@ cpu = [
 ]
 diarize = [
     "pyannote.audio>=4.0",
+    # 전이 의존성에는 인덱스 소스가 안 붙으므로 torch 계열을 직접 의존성으로 승격,
+    # 아래 tool.uv.sources의 리눅스 CPU 인덱스 고정을 받게 한다
+    "torch",
+    "torchaudio",
+    "torchcodec",
 ]
 
 [dependency-groups]
