@@ -43,7 +43,9 @@ def create_app(
             return backend_holder["backend"]
 
     store = JobStore()
-    worker = JobWorker(store, lambda job: run_job(job, get_backend()), cfg.job_ttl)
+    worker = JobWorker(
+        store, lambda job: run_job(job, get_backend(), hf_token=cfg.hf_token), cfg.job_ttl
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
