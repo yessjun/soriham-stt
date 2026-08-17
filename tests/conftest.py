@@ -16,4 +16,5 @@ def settings(tmp_path: Path) -> Settings:
         work_dir=tmp_path / "work",
         shared_dir=tmp_path / "shared",
         job_ttl=3600.0,
+        max_upload_bytes=64 * 1024 * 1024,
     )

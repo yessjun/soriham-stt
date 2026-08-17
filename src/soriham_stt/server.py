@@ -49,6 +49,8 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # 이전 실행이 남긴 업로드 잔여물 정리 — 잡 상태가 인메모리라 재시작 후엔 고아 파일
+        shutil.rmtree(cfg.work_dir, ignore_errors=True)
         worker.start()
         yield
         worker.shutdown()
@@ -76,8 +78,12 @@ def create_app(
             cleanup_dir.mkdir(parents=True, exist_ok=True)
             suffix = Path(file.filename or "audio").suffix or ".bin"
             audio_path = cleanup_dir / f"audio{suffix}"
-            with audio_path.open("wb") as out:
-                shutil.copyfileobj(file.file, out)
+            try:
+                _copy_limited(file.file, audio_path, cfg.max_upload_bytes)
+            except Exception:
+                # 복사 실패(연결 끊김, 디스크 부족, 한도 초과) 시 부분 파일을 남기지 않는다
+                shutil.rmtree(cleanup_dir, ignore_errors=True)
+                raise
 
         job = Job(
             id=job_id,
@@ -108,6 +114,17 @@ def create_app(
         )
 
     return app
+
+
+def _copy_limited(src, dest: Path, max_bytes: int) -> None:
+    """업로드를 한도까지만 복사한다. 초과 시 413."""
+    written = 0
+    with dest.open("wb") as out:
+        while chunk := src.read(1024 * 1024):
+            written += len(chunk)
+            if written > max_bytes:
+                raise HTTPException(413, "업로드 크기 한도를 초과했습니다")
+            out.write(chunk)
 
 
 def _validate_shared_path(path: str, cfg: Settings) -> Path:

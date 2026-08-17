@@ -9,6 +9,7 @@ from pathlib import Path
 
 DEFAULT_MODEL = "large-v3-turbo"
 DEFAULT_JOB_TTL = 3600.0
+DEFAULT_MAX_UPLOAD_MB = 4096
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,7 @@ class Settings:
     - STT_WORK_DIR: 업로드 오디오 임시 저장 위치
     - STT_SHARED_DIR: 경로 입력을 허용할 최상위 폴더. 없으면 경로 입력 자체를 거부
     - STT_JOB_TTL: 완료·실패한 잡 상태를 유지할 시간(초)
+    - STT_MAX_UPLOAD_MB: 업로드 오디오 크기 한도(MB)
     """
 
     device: str | None
@@ -29,6 +31,7 @@ class Settings:
     work_dir: Path
     shared_dir: Path | None
     job_ttl: float
+    max_upload_bytes: int
 
 
 def load_settings(env: dict[str, str] | None = None) -> Settings:
@@ -43,6 +46,7 @@ def load_settings(env: dict[str, str] | None = None) -> Settings:
         work_dir=Path(e.get("STT_WORK_DIR") or Path(tempfile.gettempdir()) / "soriham-stt"),
         shared_dir=Path(shared).resolve() if shared else None,
         job_ttl=float(e.get("STT_JOB_TTL") or DEFAULT_JOB_TTL),
+        max_upload_bytes=int(e.get("STT_MAX_UPLOAD_MB") or DEFAULT_MAX_UPLOAD_MB) * 1024 * 1024,
     )
 
 
