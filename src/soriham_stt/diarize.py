@@ -22,7 +22,9 @@ def diarize(audio_path: Path, hf_token: str | None) -> list[Turn] | None:
         return None
     try:
         pipeline = _get_pipeline(hf_token)
-        annotation = pipeline(str(audio_path))
+        output = pipeline(str(audio_path))
+        # pyannote 4.x는 DiarizeOutput 래퍼를, 3.x는 Annotation을 그대로 돌려준다
+        annotation = getattr(output, "speaker_diarization", output)
         return [
             (float(turn.start), float(turn.end), str(label))
             for turn, _, label in annotation.itertracks(yield_label=True)
