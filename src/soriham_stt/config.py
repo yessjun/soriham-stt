@@ -33,6 +33,8 @@ class Settings:
 
 def load_settings(env: dict[str, str] | None = None) -> Settings:
     e = os.environ if env is None else env
+    if env is None:
+        _load_dotenv(e)
     shared = e.get("STT_SHARED_DIR")
     return Settings(
         device=e.get("STT_DEVICE") or None,
@@ -42,3 +44,18 @@ def load_settings(env: dict[str, str] | None = None) -> Settings:
         shared_dir=Path(shared).resolve() if shared else None,
         job_ttl=float(e.get("STT_JOB_TTL") or DEFAULT_JOB_TTL),
     )
+
+
+def _load_dotenv(e) -> None:
+    """레포 루트의 .env를 읽어 미설정 키만 채운다 (HF_TOKEN 등)."""
+    env_file = Path(__file__).resolve().parents[2] / ".env"
+    if not env_file.is_file():
+        return
+    for line in env_file.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        if key and key not in e:
+            e[key] = value.strip().strip("'\"")
