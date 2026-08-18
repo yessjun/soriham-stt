@@ -16,6 +16,10 @@ class RawSegment:
     end: float
     text: str
     words: list[Word] = field(default_factory=list)
+    # 환청 판정에 쓰는 whisper 자체 지표. 압축률이 높을수록 같은 말을 되풀이한 것이다
+    compression_ratio: float | None = None
+    no_speech_prob: float | None = None
+    avg_logprob: float | None = None
 
 
 @dataclass
