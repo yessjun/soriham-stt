@@ -131,3 +131,30 @@ def test_health(settings: Settings) -> None:
         job_id = client.post("/jobs", files={"file": ("a.wav", b"x", "audio/wav")}).json()["job_id"]
         wait_done(client, job_id)
         assert client.get("/health").json()["versions"]["fake"] == "0"
+
+
+def test_진행률과_단계가_잡_상태에_실린다(settings: Settings) -> None:
+    """전사 중에는 stage와 progress가 보이고, 끝나면 정리된다."""
+    backend = FakeBackend(progress=(0.25, 0.5))
+    with make_client(settings, backend) as client:
+        job_id = client.post("/jobs", files={"file": ("a.wav", b"pcm", "audio/wav")}).json()[
+            "job_id"
+        ]
+        body = wait_done(client, job_id)
+
+    assert body["status"] == "done"
+    # 완료 후에는 진행 정보가 남지 않는다
+    assert body["stage"] is None
+    assert body["progress"] is None
+
+
+def test_진행_필드는_기본이_None이다(settings: Settings) -> None:
+    """진행률을 보고하지 않는 백엔드에서도 계약은 유지된다."""
+    with make_client(settings, FakeBackend()) as client:
+        job_id = client.post("/jobs", files={"file": ("a.wav", b"pcm", "audio/wav")}).json()[
+            "job_id"
+        ]
+        body = wait_done(client, job_id)
+
+    assert body["status"] == "done"
+    assert body["stage"] is None and body["progress"] is None

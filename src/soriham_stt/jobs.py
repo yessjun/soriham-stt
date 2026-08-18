@@ -17,7 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from soriham_stt.schemas import JobResult, JobState
+from soriham_stt.schemas import JobResult, JobStage, JobState
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +40,9 @@ class Job:
     result: JobResult | None = None
     error: str | None = None
     finished_at: float | None = None
+    # 진행 상황(선택). 화자분리는 비율을 낼 수 없어 stage만 채운다
+    stage: JobStage | None = None
+    progress: float | None = None
 
 
 def new_job_id() -> str:
@@ -120,5 +123,7 @@ class JobWorker(threading.Thread):
         # 관측한 시점에는 정리가 보장돼야 한다
         if job.cleanup_dir is not None:
             shutil.rmtree(job.cleanup_dir, ignore_errors=True)
+        job.stage = None
+        job.progress = None
         job.finished_at = time.time()
         job.status = "error" if job.error is not None else "done"
