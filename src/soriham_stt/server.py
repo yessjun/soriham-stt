@@ -20,6 +20,8 @@ from soriham_stt.pipeline import run_job
 from soriham_stt.schemas import (
     HealthResponse,
     JobCreateResponse,
+    JobResult,
+    JobStage,
     JobStatusResponse,
 )
 
@@ -43,9 +45,15 @@ def create_app(
             return backend_holder["backend"]
 
     store = JobStore()
-    worker = JobWorker(
-        store, lambda job: run_job(job, get_backend(), hf_token=cfg.hf_token), cfg.job_ttl
-    )
+
+    def run(job: Job) -> JobResult:
+        def report(stage: JobStage, ratio: float | None) -> None:
+            job.stage = stage
+            job.progress = ratio
+
+        return run_job(job, get_backend(), hf_token=cfg.hf_token, on_progress=report)
+
+    worker = JobWorker(store, run, cfg.job_ttl)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -99,7 +107,13 @@ def create_app(
         job = store.get(job_id)
         if job is None:
             raise HTTPException(404, "잡이 없습니다")
-        return JobStatusResponse(status=job.status, result=job.result, error=job.error)
+        return JobStatusResponse(
+            status=job.status,
+            result=job.result,
+            error=job.error,
+            stage=job.stage,
+            progress=job.progress,
+        )
 
     @app.get("/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
