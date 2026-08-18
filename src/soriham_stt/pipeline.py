@@ -13,6 +13,7 @@ from soriham_stt.audio import DecodeFailed, decode_to_wav
 from soriham_stt.backends.base import TranscribeBackend
 from soriham_stt.jobs import Job
 from soriham_stt.merge import Turn, merge_transcript
+from soriham_stt.noise import classify
 from soriham_stt.schemas import JobResult, JobStage, Segment
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,19 @@ def run_job(
                 logger.exception("화자분리 실패 — 화자 없이 계속")
                 diarize_error = f"{type(exc).__name__}: {exc}"[:400]
 
+    # 환청 판정은 병합 전에 원시 세그먼트에서 한다 — whisper 지표가 여기에만 있다
+    noise_flags = classify(raw.segments)
+    noise_spans = [
+        (seg.start, seg.end)
+        for seg, is_noise in zip(raw.segments, noise_flags, strict=True)
+        if is_noise
+    ]
+    raw.segments = [
+        seg
+        for seg, is_noise in zip(raw.segments, noise_flags, strict=True)
+        if not is_noise and seg.text.strip()
+    ]
+
     if turns:
         segments = merge_transcript(raw, turns)
     else:
@@ -69,6 +83,7 @@ def run_job(
             Segment(start=s.start, end=s.end, text=s.text, speaker=None, words=s.words)
             for s in raw.segments
         ]
+    segments = _with_noise(segments, noise_spans)
 
     meta: dict[str, object] = {
         "device": backend.device,
@@ -76,8 +91,30 @@ def run_job(
         "diarized": bool(turns),
         "elapsed_sec": round(time.monotonic() - started, 2),
     }
+    meta["noise_sec"] = round(sum(e - s for s, e in noise_spans), 1)
     if diarize_error:
         meta["diarize_error"] = diarize_error
     if decode_error:
         meta["decode_error"] = decode_error
     return JobResult(language=raw.language, segments=segments, meta=meta)
+
+
+def _with_noise(segments: list[Segment], spans: list[tuple[float, float]]) -> list[Segment]:
+    """소음으로 판정된 구간을 자리표시 세그먼트로 끼워 넣는다.
+
+    지워버리면 녹취록에 설명 없는 구멍이 남는다. 무엇을 버렸는지는 보여야 한다.
+    2초 이내로 붙은 구간은 하나로 합친다 — 잘게 쪼개진 표시가 줄줄이 서는 것보다 낫다.
+    """
+    if not spans:
+        return segments
+    merged: list[list[float]] = []
+    for start, end in sorted(spans):
+        if merged and start - merged[-1][1] <= 2.0:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    marks = [
+        Segment(start=start, end=end, text="", speaker=None, words=[], kind="noise")
+        for start, end in merged
+    ]
+    return sorted([*segments, *marks], key=lambda s: (s.start, s.end))
