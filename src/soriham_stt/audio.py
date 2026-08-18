@@ -47,3 +47,34 @@ def decode_to_wav(src: Path, dest_dir: Path) -> Path:
     if result.returncode != 0 or not dest.is_file():
         raise DecodeFailed(result.stderr.strip()[:400] or "ffmpeg 변환 실패")
     return dest
+
+
+def cut_wav(src: Path, start: float, duration: float, dest: Path) -> Path:
+    """구간 하나를 잘라 16kHz 모노 wav로 만든다. 재전사에 쓴다."""
+    result = subprocess.run(
+        [
+            "ffmpeg",
+            "-nostdin",
+            "-v",
+            "error",
+            "-ss",
+            f"{start:.3f}",
+            "-t",
+            f"{duration:.3f}",
+            "-i",
+            str(src),
+            "-ar",
+            str(SAMPLE_RATE),
+            "-ac",
+            "1",
+            "-c:a",
+            "pcm_s16le",
+            "-y",
+            str(dest),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0 or not dest.is_file():
+        raise DecodeFailed(result.stderr.strip()[:400] or "구간 자르기 실패")
+    return dest
