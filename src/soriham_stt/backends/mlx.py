@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -104,7 +105,9 @@ def _progress_probe(on_progress: Callable[[float], None] | None) -> Iterator[Non
         yield
         return
     try:
-        from mlx_whisper import transcribe as transcribe_module
+        # mlx_whisper 패키지가 같은 이름의 함수로 서브모듈을 가려서
+        # `from mlx_whisper import transcribe`는 함수를 준다. 모듈이 필요하다
+        transcribe_module = importlib.import_module("mlx_whisper.transcribe")
     except Exception:  # noqa: BLE001 - 진행률은 부가 기능
         yield
         return

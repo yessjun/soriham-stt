@@ -46,3 +46,28 @@ def test_mlx_진행바는_총량을_모르면_보고하지_않는다() -> None:
     bar.update(10)
 
     assert seen == []
+
+
+def test_진행_대역이_실제_모듈에_설치된다(monkeypatch) -> None:
+    """`from mlx_whisper import transcribe`는 함수를 주므로 모듈을 직접 가져와야 한다.
+
+    이걸 놓치면 대역이 함수 객체에 붙어 아무도 읽지 않고, 진행률이 0에서 멈춘다.
+    """
+    import sys
+    import types
+
+    from soriham_stt.backends.mlx import _progress_probe
+
+    module = types.ModuleType("mlx_whisper.transcribe")
+    module.tqdm = "원본"  # type: ignore[attr-defined]
+    package = types.ModuleType("mlx_whisper")
+    package.transcribe = lambda *a, **k: None  # 서브모듈을 가리는 함수
+    monkeypatch.setitem(sys.modules, "mlx_whisper", package)
+    monkeypatch.setitem(sys.modules, "mlx_whisper.transcribe", module)
+
+    with _progress_probe(lambda ratio: None):
+        assert module.tqdm != "원본"
+        bar = module.tqdm.tqdm(total=10)  # type: ignore[attr-defined]
+        assert hasattr(bar, "update")
+
+    assert module.tqdm == "원본"  # 빠져나오면 되돌린다
