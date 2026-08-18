@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from soriham_stt.backends.base import RawSegment, RawTranscript
@@ -11,12 +12,23 @@ class FakeBackend:
     name = "fake"
     device = "cpu"
 
-    def __init__(self, fail: bool = False) -> None:
+    def __init__(self, fail: bool = False, progress: tuple[float, ...] = ()) -> None:
         self.fail = fail
         self.calls: list[Path] = []
+        self.progress = progress
 
-    def transcribe(self, audio_path: Path, *, model: str, language: str | None) -> RawTranscript:
+    def transcribe(
+        self,
+        audio_path: Path,
+        *,
+        model: str,
+        language: str | None,
+        on_progress: Callable[[float], None] | None = None,
+    ) -> RawTranscript:
         self.calls.append(audio_path)
+        if on_progress is not None:
+            for ratio in self.progress:
+                on_progress(ratio)
         if self.fail:
             raise RuntimeError("가짜 백엔드 실패")
         return RawTranscript(

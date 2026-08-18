@@ -10,9 +10,11 @@ from soriham_stt import diarize as diarize_module
 from soriham_stt.backends.base import TranscribeBackend
 from soriham_stt.jobs import Job
 from soriham_stt.merge import Turn, merge_transcript
-from soriham_stt.schemas import JobResult, Segment
+from soriham_stt.schemas import JobResult, JobStage, Segment
 
 Diarizer = Callable[[Path, str | None], "list[Turn] | None"]
+# (단계, 진행률 0~1 또는 None)
+ProgressHook = Callable[[JobStage, float | None], None]
 
 
 def run_job(
@@ -20,12 +22,23 @@ def run_job(
     backend: TranscribeBackend,
     hf_token: str | None = None,
     diarizer: Diarizer | None = None,
+    on_progress: ProgressHook | None = None,
 ) -> JobResult:
     started = time.monotonic()
-    raw = backend.transcribe(job.audio_path, model=job.params.model, language=job.params.language)
+    if on_progress is not None:
+        on_progress("transcribe", 0.0)
+    raw = backend.transcribe(
+        job.audio_path,
+        model=job.params.model,
+        language=job.params.language,
+        on_progress=(lambda r: on_progress("transcribe", r)) if on_progress else None,
+    )
 
     turns: list[Turn] | None = None
     if job.params.diarize:
+        # 화자분리는 진행률을 낼 수 없어 단계만 알린다
+        if on_progress is not None:
+            on_progress("diarize", None)
         turns = (diarizer or diarize_module.diarize)(job.audio_path, hf_token)
 
     if turns:

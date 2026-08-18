@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any
@@ -26,19 +27,32 @@ class FasterWhisperBackend:
             )
         return self._models[model]
 
-    def transcribe(self, audio_path: Path, *, model: str, language: str | None) -> RawTranscript:
+    def transcribe(
+        self,
+        audio_path: Path,
+        *,
+        model: str,
+        language: str | None,
+        on_progress: Callable[[float], None] | None = None,
+    ) -> RawTranscript:
         segments_iter, info = self._get_model(model).transcribe(
             str(audio_path), language=language, word_timestamps=True
         )
-        segments = [
-            RawSegment(
-                start=float(seg.start),
-                end=float(seg.end),
-                text=seg.text.strip(),
-                words=[(w.word.strip(), float(w.start), float(w.end)) for w in seg.words or []],
+        # 세그먼트는 제너레이터로 나온다 — 소비하면서 마지막 끝 시각으로 진행률을 낸다
+        total = float(getattr(info, "duration", 0.0) or 0.0)
+        segments = []
+        for seg in segments_iter:
+            words = [(w.word.strip(), float(w.start), float(w.end)) for w in seg.words or []]
+            segments.append(
+                RawSegment(
+                    start=float(seg.start),
+                    end=float(seg.end),
+                    text=seg.text.strip(),
+                    words=words,
+                )
             )
-            for seg in segments_iter
-        ]
+            if on_progress is not None and total > 0:
+                on_progress(min(1.0, float(seg.end) / total))
         return RawTranscript(language=info.language, segments=segments)
 
     def versions(self) -> dict[str, str]:

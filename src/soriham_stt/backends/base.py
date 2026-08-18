@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -33,7 +34,12 @@ class TranscribeBackend(Protocol):
     device: str
 
     def transcribe(
-        self, audio_path: Path, *, model: str, language: str | None
+        self,
+        audio_path: Path,
+        *,
+        model: str,
+        language: str | None,
+        on_progress: Callable[[float], None] | None = None,
     ) -> RawTranscript: ...
 
     def versions(self) -> dict[str, str]: ...
