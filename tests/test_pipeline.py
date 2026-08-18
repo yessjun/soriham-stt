@@ -67,3 +67,33 @@ def test_선변환_실패해도_원본으로_전사한다(tmp_path: Path):
     assert "decode_error" in result.meta
     # 변환에 실패했으면 원본 경로를 그대로 넘긴다
     assert backend.calls == [src]
+
+
+def test_소음_구간은_자리표시로_남는다():
+    """지워버리면 녹취록에 설명 없는 구멍이 남는다."""
+    from soriham_stt.backends.base import RawSegment, RawTranscript
+
+    class NoisyBackend(FakeBackend):
+        def transcribe(self, audio_path, *, model, language, on_progress=None):
+            return RawTranscript(
+                language="ko",
+                segments=[
+                    RawSegment(start=0.0, end=2.0, text="정상 발언", compression_ratio=1.2),
+                    RawSegment(start=2.0, end=4.0, text="반복 반복", compression_ratio=18.6),
+                    RawSegment(start=4.0, end=6.0, text="반복 반복", compression_ratio=18.6),
+                    RawSegment(start=8.0, end=9.0, text="다시 발언", compression_ratio=1.3),
+                ],
+            )
+
+    result = run_job(make_job(diarize=False), NoisyBackend())
+
+    kinds = [(s.kind, s.text) for s in result.segments]
+    assert kinds == [
+        ("speech", "정상 발언"),
+        ("noise", ""),
+        ("speech", "다시 발언"),
+    ]
+    # 맞닿은 소음 구간은 하나로 합쳐진다
+    noise = next(s for s in result.segments if s.kind == "noise")
+    assert (noise.start, noise.end) == (2.0, 6.0)
+    assert result.meta["noise_sec"] == 4.0

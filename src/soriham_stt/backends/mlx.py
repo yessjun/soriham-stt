@@ -14,6 +14,11 @@ from soriham_stt.backends.base import RawSegment, RawTranscript
 
 logger = logging.getLogger(__name__)
 
+
+def _maybe_float(value: Any) -> float | None:
+    return None if value is None else float(value)
+
+
 # whisper 모델 별칭 → mlx-community 변환 모델 레포 (레포마다 이름 규칙이 달라 표로 고정)
 _MLX_REPOS = {
     "tiny": "mlx-community/whisper-tiny",
@@ -54,6 +59,10 @@ class MlxWhisperBackend:
                 path_or_hf_repo=resolve_repo(model),
                 language=language,
                 word_timestamps=True,
+                # 앞 문맥을 물고 가면 한 번 어긋난 환청이 끝까지 이어진다
+                condition_on_previous_text=False,
+                # 긴 무음 뒤 지어내는 문장을 잘라낸다
+                hallucination_silence_threshold=2.0,
             )
         segments = [
             RawSegment(
@@ -64,6 +73,9 @@ class MlxWhisperBackend:
                     (str(w["word"]).strip(), float(w["start"]), float(w["end"]))
                     for w in seg.get("words", [])
                 ],
+                compression_ratio=_maybe_float(seg.get("compression_ratio")),
+                no_speech_prob=_maybe_float(seg.get("no_speech_prob")),
+                avg_logprob=_maybe_float(seg.get("avg_logprob")),
             )
             for seg in result["segments"]
         ]

@@ -14,6 +14,9 @@ JobState = Literal["queued", "running", "done", "error"]
 # 진행 중인 단계. 화자분리는 진행률을 낼 수 없어 단계 이름만 보고한다
 JobStage = Literal["transcribe", "diarize"]
 
+# 세그먼트 종류. noise는 말이 아닌 구간을 whisper가 받아적은 것으로 판정한 자리다
+SegmentKind = Literal["speech", "noise"]
+
 
 class Segment(BaseModel):
     start: float
@@ -21,6 +24,7 @@ class Segment(BaseModel):
     text: str
     speaker: str | None = None
     words: list[Word] = []
+    kind: SegmentKind = "speech"
 
 
 class JobResult(BaseModel):

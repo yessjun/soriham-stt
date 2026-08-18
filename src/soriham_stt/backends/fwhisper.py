@@ -36,7 +36,12 @@ class FasterWhisperBackend:
         on_progress: Callable[[float], None] | None = None,
     ) -> RawTranscript:
         segments_iter, info = self._get_model(model).transcribe(
-            str(audio_path), language=language, word_timestamps=True
+            str(audio_path),
+            language=language,
+            word_timestamps=True,
+            # mlx 쪽과 같은 이유로 문맥 물기를 끄고 무음 구간 환청을 억제한다
+            condition_on_previous_text=False,
+            hallucination_silence_threshold=2.0,
         )
         # 세그먼트는 제너레이터로 나온다 — 소비하면서 마지막 끝 시각으로 진행률을 낸다
         total = float(getattr(info, "duration", 0.0) or 0.0)
@@ -49,6 +54,9 @@ class FasterWhisperBackend:
                     end=float(seg.end),
                     text=seg.text.strip(),
                     words=words,
+                    compression_ratio=getattr(seg, "compression_ratio", None),
+                    no_speech_prob=getattr(seg, "no_speech_prob", None),
+                    avg_logprob=getattr(seg, "avg_logprob", None),
                 )
             )
             if on_progress is not None and total > 0:

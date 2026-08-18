@@ -43,6 +43,7 @@ def test_upload_job_returns_contract_shape(settings: Settings) -> None:
             "text": "안녕하세요",
             "speaker": None,
             "words": [["안녕하세요", 0.0, 1.2]],
+            "kind": "speech",
         }
         assert result["meta"]["model"] == "tiny"
         assert result["meta"]["diarized"] is False
