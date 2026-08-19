@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fakes import FakeBackend
+from soriham_stt import pipeline
 from soriham_stt.jobs import Job, JobParams
 from soriham_stt.pipeline import run_job
 
@@ -97,3 +98,87 @@ def test_소음_구간은_자리표시로_남는다():
     noise = next(s for s in result.segments if s.kind == "noise")
     assert (noise.start, noise.end) == (2.0, 6.0)
     assert result.meta["noise_sec"] == 4.0
+
+
+def test_받아적지_못한_구간을_잘라_다시_돌린다(tmp_path: Path, monkeypatch):
+    """통째로 돌릴 때 오염됐던 구간이 떼어내면 읽히는 경우가 있다."""
+    from soriham_stt.backends.base import RawSegment, RawTranscript
+
+    src = tmp_path / "a.wav"
+    src.write_bytes(b"x")
+    # 실제 오디오가 아니므로 자르기는 흉내만 낸다 — 여기서 볼 것은 파이프라인 흐름이다
+    monkeypatch.setattr(pipeline, "cut_wav", lambda src, start, dur, dest: dest)
+
+    class RetryBackend(FakeBackend):
+        def __init__(self):
+            super().__init__()
+            self.retries: list[Path] = []
+
+        def transcribe(self, audio_path, *, model, language, on_progress=None):
+            if "retry-" in audio_path.name:
+                self.retries.append(audio_path)
+                # 잘라서 돌리니 제대로 읽혔다 (구간 기준 시각으로 나온다)
+                return RawTranscript(
+                    language="ko",
+                    segments=[
+                        RawSegment(start=0.5, end=2.0, text="되살아난 발언", compression_ratio=1.2)
+                    ],
+                )
+            return RawTranscript(
+                language="ko",
+                segments=[
+                    RawSegment(start=0.0, end=2.0, text="정상 발언", compression_ratio=1.2),
+                    RawSegment(
+                        start=10.0, end=14.0, text="반복 반복 반복 반복", compression_ratio=18.6
+                    ),
+                ],
+            )
+
+    backend = RetryBackend()
+    job = Job(id="j", audio_path=src, params=JobParams(model="tiny", language="ko", diarize=False))
+    result = run_job(job, backend)
+
+    assert len(backend.retries) == 1
+    kinds = [(s.kind, s.text, round(s.start, 1)) for s in result.segments]
+    # 재전사 결과는 원본 시각으로 옮겨 붙는다 (10.0 + 0.5)
+    assert kinds == [("speech", "정상 발언", 0.0), ("speech", "되살아난 발언", 10.5)]
+    assert result.meta["recovered_segments"] == 1
+    assert result.meta["noise_sec"] == 0.0
+
+
+def test_재전사도_실패하면_구간_표시로_남는다(tmp_path: Path, monkeypatch):
+    from soriham_stt.backends.base import RawSegment, RawTranscript
+
+    src = tmp_path / "a.wav"
+    src.write_bytes(b"x")
+    # 실제 오디오가 아니므로 자르기는 흉내만 낸다 — 여기서 볼 것은 파이프라인 흐름이다
+    monkeypatch.setattr(pipeline, "cut_wav", lambda src, start, dur, dest: dest)
+
+    class StubbornBackend(FakeBackend):
+        def transcribe(self, audio_path, *, model, language, on_progress=None):
+            if "retry-" in audio_path.name:
+                return RawTranscript(
+                    language="ko",
+                    segments=[
+                        RawSegment(
+                            start=0.0, end=4.0, text="반복 반복 반복 반복", compression_ratio=18.6
+                        )
+                    ],
+                )
+            return RawTranscript(
+                language="ko",
+                segments=[
+                    RawSegment(start=0.0, end=2.0, text="정상 발언", compression_ratio=1.2),
+                    RawSegment(
+                        start=10.0, end=14.0, text="반복 반복 반복 반복", compression_ratio=18.6
+                    ),
+                ],
+            )
+
+    result = run_job(
+        Job(id="j", audio_path=src, params=JobParams(model="tiny", language="ko", diarize=False)),
+        StubbornBackend(),
+    )
+
+    assert [(s.kind, s.text) for s in result.segments] == [("speech", "정상 발언"), ("noise", "")]
+    assert result.meta["recovered_segments"] == 0
