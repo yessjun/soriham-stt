@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from fakes import FakeBackend
 from soriham_stt import pipeline
 from soriham_stt.jobs import Job, JobParams
@@ -188,3 +190,35 @@ def test_재전사도_실패하면_구간_표시로_남는다(tmp_path: Path, mo
 
     assert [(s.kind, s.text) for s in result.segments] == [("speech", "정상 발언"), ("noise", "")]
     assert result.meta["recovered_segments"] == 0
+
+
+def test_화자분리_입력은_파형으로_올린다(tmp_path: Path) -> None:
+    """경로를 넘기면 pyannote가 화자 구간마다 파일을 다시 디코딩한다.
+
+    175분 실측에서 그 크롭이 CPU 한 코어를 잡고 전체 배속이 100배에서 9배로 떨어졌다.
+    """
+    pytest.importorskip("torch")
+    import wave
+
+    from soriham_stt.diarize import _as_input
+
+    src = tmp_path / "audio.16k.wav"
+    with wave.open(str(src), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(16000)
+        handle.writeframes(b"\x00\x10" * 16000)
+
+    payload = _as_input(src)
+    assert isinstance(payload, dict)
+    assert payload["sample_rate"] == 16000
+    assert payload["waveform"].shape == (1, 16000)
+
+
+def test_못_읽는_오디오는_경로_그대로_넘긴다(tmp_path: Path) -> None:
+    """선변환이 실패해 원본이 온 경우다. 화자분리까지 막을 이유는 없다."""
+    from soriham_stt.diarize import _as_input
+
+    src = tmp_path / "audio.mp3"
+    src.write_bytes(b"not a wav")
+    assert _as_input(src) == str(src)
