@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from soriham_stt.backends import detect_device
@@ -9,6 +11,27 @@ from soriham_stt.backends.mlx import resolve_repo
 def test_detect_device_forced_value_wins():
     assert detect_device("cuda") == "cuda"
     assert detect_device("cpu") == "cpu"
+
+
+def test_백엔드가_없으면_그_백엔드의_extra를_알려준다(monkeypatch) -> None:
+    """cuda에서 `--extra cpu`를 안내하면 CPU 휠을 깔고 GPU를 못 쓴 채 돈다."""
+    import importlib.util
+
+    from soriham_stt.backends import select_backend
+    from soriham_stt.config import Settings
+
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+    settings = Settings(
+        device="cuda",
+        default_model="large-v3",
+        hf_token=None,
+        work_dir=Path("/tmp"),
+        shared_dir=None,
+        job_ttl=1.0,
+        max_upload_bytes=1,
+    )
+    with pytest.raises(RuntimeError, match="--extra cuda"):
+        select_backend(settings)
 
 
 def test_resolve_repo_known_alias():

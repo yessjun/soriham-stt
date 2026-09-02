@@ -38,11 +38,24 @@ GET  /health      → {"device": "mlx|cuda|cpu", "model", "versions"}
 
 ### 실행
 
-로컬(백엔드는 실행 환경에 맞는 extra 선택 — Apple Silicon은 `mlx`, 그 외 `cpu`,
-화자분리는 `diarize` 추가):
+로컬(백엔드는 실행 환경에 맞는 extra 선택 — Apple Silicon은 `mlx`, NVIDIA GPU는
+`cuda`, 그 외 `cpu`, 화자분리는 `diarize` 추가):
 
 ```bash
 uv sync --extra mlx --extra diarize
+uv run uvicorn --factory soriham_stt.server:create_app --host 0.0.0.0 --port 8100
+```
+
+`cuda` extra는 CUDA 12.8 빌드를 받습니다. faster-whisper가 쓰는 CTranslate2는 cuBLAS와
+cuDNN을 실행 시점에 찾으므로, 함께 설치된 라이브러리 경로를 `LD_LIBRARY_PATH`에 얹고
+띄웁니다:
+
+```bash
+uv sync --extra cuda --extra diarize
+export LD_LIBRARY_PATH="$(uv run python -c '
+import os, nvidia.cublas.lib, nvidia.cudnn.lib
+print(os.path.dirname(nvidia.cublas.lib.__file__), os.path.dirname(nvidia.cudnn.lib.__file__), sep=":")
+')${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 uv run uvicorn --factory soriham_stt.server:create_app --host 0.0.0.0 --port 8100
 ```
 

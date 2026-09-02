@@ -34,11 +34,15 @@ def select_backend(settings: Settings) -> TranscribeBackend:
             from soriham_stt.backends.mlx import MlxWhisperBackend
 
             return MlxWhisperBackend()
+        # faster_whisper는 첫 잡의 모델 적재 때 import된다. 여기서 미리 보지 않으면
+        # extra를 잘못 깐 것을 러너가 잡을 받은 뒤에야, 그것도 원시 ImportError로 안다
+        if importlib.util.find_spec("faster_whisper") is None:
+            raise ModuleNotFoundError(name="faster_whisper")
         from soriham_stt.backends.fwhisper import FasterWhisperBackend
 
         return FasterWhisperBackend(device=device)
     except ModuleNotFoundError as exc:
-        extra = "mlx" if device == "mlx" else "cpu"
+        # extra 이름이 곧 백엔드 종류다 (mlx | cuda | cpu)
         raise RuntimeError(
-            f"{device} 백엔드 의존성이 없습니다. `uv sync --extra {extra}`로 설치하세요"
+            f"{device} 백엔드 의존성이 없습니다. `uv sync --extra {device}`로 설치하세요"
         ) from exc
