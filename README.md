@@ -31,7 +31,7 @@ GET  /health      → {"device": "mlx|cuda|cpu", "model", "versions"}
 |---|---|---|
 | `STT_DEVICE` | 자동 선택 | 백엔드 강제 지정 (`mlx` \| `cuda` \| `cpu`) |
 | `STT_MODEL` | `large-v3-turbo` | 기본 whisper 모델 |
-| `HF_TOKEN` | 없음 | pyannote 화자분리용 토큰. 없으면 화자분리를 생략합니다 |
+| `HF_TOKEN` | 없음 | pyannote 화자분리용 토큰. 없으면 화자분리를 생략하고 결과 `meta.diarize_error`에 사유를 남깁니다 |
 | `STT_WORK_DIR` | 시스템 임시 폴더 | 업로드 오디오 임시 저장 위치 |
 | `STT_SHARED_DIR` | 없음 | `path` 입력을 허용할 최상위 폴더 |
 | `STT_JOB_TTL` | `3600` | 완료된 잡 상태 유지 시간(초) |

@@ -42,6 +42,12 @@ def test_diarizer_none_means_graceful_skip():
     assert all(s.speaker is None for s in result.segments)
 
 
+def test_토큰이_없어_건너뛴_화자분리도_사유를_남긴다():
+    """화면에 흔적이 없으면 설정이 빠진 것과 화자가 한 명인 것을 구분할 수 없다."""
+    result = run_job(make_job(diarize=True), FakeBackend(), diarizer=lambda p, t: None)
+    assert result.meta["diarize_error"] == "HF_TOKEN 미설정"
+
+
 def test_화자분리_실패는_사유를_남기고_녹취록은_살린다():
     """조용히 화자 없는 결과가 나오면 몇 시간 뒤에야 알게 된다."""
 
