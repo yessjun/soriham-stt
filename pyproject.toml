@@ -28,6 +28,9 @@ cuda = [
     "torch",
     "torchaudio",
     "torchcodec",
+    # torchcodec의 CUDA 빌드가 libnppicc를 dlopen하는데 torch는 npp를 안 끌고 온다.
+    # 없으면 torchcodec import가 실패하고, 화자분리가 오디오를 못 읽는다
+    "nvidia-npp-cu12; sys_platform == 'linux'",
 ]
 diarize = [
     "pyannote.audio>=4.0",
