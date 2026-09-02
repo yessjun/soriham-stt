@@ -83,6 +83,10 @@ def run_job(
                 on_progress("diarize", None)
             try:
                 turns = (diarizer or diarize_module.diarize)(audio_path, hf_token)
+                if turns is None:
+                    # 토큰이 없어 건너뛴 경우다. 사유를 안 실으면 몇 시간을 돌리고도
+                    # 화자 없는 녹취록만 남고 왜인지 알 길이 없다
+                    diarize_error = "HF_TOKEN 미설정"
             except Exception as exc:  # noqa: BLE001 - 녹취록은 살리고 사유를 남긴다
                 logger.exception("화자분리 실패 — 화자 없이 계속")
                 diarize_error = f"{type(exc).__name__}: {exc}"[:400]
