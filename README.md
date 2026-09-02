@@ -46,15 +46,16 @@ uv sync --extra mlx --extra diarize
 uv run uvicorn --factory soriham_stt.server:create_app --host 0.0.0.0 --port 8100
 ```
 
-`cuda` extra는 CUDA 12.8 빌드를 받습니다. faster-whisper가 쓰는 CTranslate2는 cuBLAS와
-cuDNN을 실행 시점에 찾으므로, 함께 설치된 라이브러리 경로를 `LD_LIBRARY_PATH`에 얹고
-띄웁니다:
+`cuda` extra는 CUDA 12.8 빌드를 받습니다. 화자분리가 오디오를 읽을 때 쓰는 torchcodec이
+함께 설치된 NVIDIA 라이브러리를 실행 시점에 dlopen하는데 그 경로가 휠에 박혀 있지
+않으므로, `LD_LIBRARY_PATH`에 얹고 띄웁니다(빠지면 화자분리만 조용히 실패합니다):
 
 ```bash
 uv sync --extra cuda --extra diarize
 export LD_LIBRARY_PATH="$(uv run python -c '
-import os, nvidia.cublas.lib, nvidia.cudnn.lib
-print(os.path.dirname(nvidia.cublas.lib.__file__), os.path.dirname(nvidia.cudnn.lib.__file__), sep=":")
+import pathlib, nvidia
+root = pathlib.Path(nvidia.__file__).parent
+print(":".join(str(p) for p in sorted(root.glob("*/lib"))))
 ')${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 uv run uvicorn --factory soriham_stt.server:create_app --host 0.0.0.0 --port 8100
 ```
