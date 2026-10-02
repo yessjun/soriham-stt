@@ -11,7 +11,8 @@ GPU에서도 같은 계약으로 동작합니다.
 
 ```
 POST /jobs        오디오 업로드(file, multipart) 또는 공유 폴더 경로(path) 중 하나
-                  + model, language, diarize        → {"job_id": "..."}
+                  + model, language, diarize, request_id, timeout_sec
+                                                   → {"job_id": "..."}
 GET  /jobs/{id}   → {"status": "queued|running|done|error",
                      "result": {"language", "segments": [{"start", "end", "text",
                                 "speaker", "words": [[단어, 시작, 끝], …]}], "meta"},
@@ -23,7 +24,15 @@ GET  /health      → {"device": "mlx|cuda|cpu", "model", "versions"}
   읽기만 하고 이동·삭제하지 않습니다. 업로드된 파일은 잡 종료 시 즉시 지웁니다.
 - 잡 상태는 메모리에만 유지합니다. 러너가 재시작되면 호출자는 `GET /jobs/{id}`의
   404를 보고 재제출합니다. 완료된 잡 상태는 `STT_JOB_TTL`(기본 1시간) 뒤 정리됩니다.
-- 잡은 단일 워커가 직렬로 처리합니다(추론 자원이 하나이므로).
+- `request_id`는 선택 UUID입니다. 같은 처리 요청을 다시 보낼 때 같은 ID를 쓰면
+  보관 중인 잡을 반환합니다. 업로드 바이트를 포함해 같은 입력에만 재사용해야 합니다.
+  러너 재시작이나 TTL 만료 뒤에는 다시 계산할 수 있습니다.
+- 잡은 단일 스레드가 직렬로 처리하며, 실행 중인 잡 외 대기는 최대 1개입니다.
+  대기열이 가득 차면 새 제출은 503입니다.
+- `timeout_sec`은 실행 시간 상한(기본 3600초)입니다. 조회·health·제출 시 상한과
+  스레드 생존을 확인합니다. 스레드 종료나 상한 초과 시 미완료 잡을 error로 바꾸고
+  health와 새 제출은 503을 반환합니다. 뒤늦게 돌아온 결과는 저장하지 않습니다.
+  블로킹 추론을 강제로 끊는 기능은 없으므로 해당 러너 프로세스를 재시작해야 합니다.
 
 ### 환경 변수
 

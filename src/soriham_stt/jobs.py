@@ -43,6 +43,8 @@ class Job:
     # 진행 상황(선택). 화자분리는 비율을 낼 수 없어 stage만 채운다
     stage: JobStage | None = None
     progress: float | None = None
+    timeout_sec: float = 3600.0
+    started_at: float | None = None
 
 
 def new_job_id() -> str:
@@ -61,6 +63,10 @@ class JobStore:
     def get(self, job_id: str) -> Job | None:
         with self._lock:
             return self._jobs.get(job_id)
+
+    def unfinished(self) -> list[Job]:
+        with self._lock:
+            return [job for job in self._jobs.values() if job.finished_at is None]
 
     def sweep(self, ttl: float, now: float | None = None) -> None:
         """TTL이 지난 완료·실패 잡을 상태 저장소에서 제거한다."""
@@ -88,18 +94,65 @@ class JobWorker(threading.Thread):
         self._store = store
         self._run_pipeline = run_pipeline
         self._job_ttl = job_ttl
-        self._queue: queue.Queue[str] = queue.Queue()
-        self._stop = threading.Event()
+        self._queue: queue.Queue[str] = queue.Queue(maxsize=1)
+        self._stop_event = threading.Event()
+        self._state_lock = threading.RLock()
+        self._failure: str | None = None
+        self._active: Job | None = None
+
+    def check_health(self) -> str | None:
+        with self._state_lock:
+            if self._failure is not None:
+                return self._failure
+            if not self.is_alive() or self._stop_event.is_set():
+                self._fail("러너 처리 스레드가 중단됐습니다. 러너를 재시작하세요")
+            elif self._active is not None:
+                job = self._active
+                if (
+                    job.started_at is not None
+                    and time.monotonic() - job.started_at > job.timeout_sec
+                ):
+                    self._fail("러너 처리 시간이 상한을 넘었습니다. 러너를 재시작하세요")
+            return self._failure
+
+    def check_available(self) -> str | None:
+        return self.check_health() or (
+            "러너 대기열이 가득 찼습니다" if self._queue.full() else None
+        )
+
+    def report(self, job: Job, stage: JobStage, ratio: float | None) -> None:
+        with self._state_lock:
+            if job.status == "running":
+                job.stage = stage
+                job.progress = ratio
+
+    def _fail(self, reason: str) -> None:
+        self._failure = reason
+        self._stop_event.set()
+        for job in self._store.unfinished():
+            job.error = reason
+            job.stage = None
+            job.progress = None
+            job.finished_at = time.time()
+            job.status = "error"
+            # 블로킹 호출이 아직 파일을 읽고 있을 수 있어 실행 중 파일은 건드리지 않는다
+            if job is not self._active and job.cleanup_dir is not None:
+                shutil.rmtree(job.cleanup_dir, ignore_errors=True)
 
     def submit(self, job: Job) -> None:
-        self._store.add(job)
-        self._queue.put(job.id)
+        with self._state_lock:
+            if reason := self.check_available():
+                raise RuntimeError(reason)
+            self._store.add(job)
+            self._queue.put_nowait(job.id)
 
     def shutdown(self) -> None:
-        self._stop.set()
+        with self._state_lock:
+            self._fail("러너가 종료 중입니다")
+        self.join(timeout=1.0)
 
     def run(self) -> None:
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             try:
                 job_id = self._queue.get(timeout=0.2)
             except queue.Empty:
@@ -108,22 +161,45 @@ class JobWorker(threading.Thread):
             job = self._store.get(job_id)
             if job is None:
                 continue
-            self._process(job)
+            with self._state_lock:
+                if self._stop_event.is_set():
+                    break
+                self._active = job
+                job.started_at = time.monotonic()
+                job.status = "running"
+            try:
+                self._process(job)
+            except BaseException:
+                logger.exception("러너 처리 스레드 중단")
+                with self._state_lock:
+                    self._fail("러너 처리 스레드가 중단됐습니다. 러너를 재시작하세요")
+            finally:
+                if job.cleanup_dir is not None:
+                    shutil.rmtree(job.cleanup_dir, ignore_errors=True)
+                with self._state_lock:
+                    self._active = None
             # 잡이 연속 유입돼도 TTL 정리가 멈추지 않게 처리 직후에도 sweep
             self._store.sweep(self._job_ttl)
 
     def _process(self, job: Job) -> None:
-        job.status = "running"
+        result = None
+        error = None
         try:
-            job.result = self._run_pipeline(job)
+            result = self._run_pipeline(job)
         except Exception as exc:  # noqa: BLE001 - 잡 실패는 격리하고 워커는 계속
             logger.exception("job %s failed", job.id)
-            job.error = f"{type(exc).__name__}: {exc}"
+            error = f"{type(exc).__name__}: {exc}"
         # 임시 파일 정리까지 끝낸 뒤에 종료 상태로 전이한다 — 호출자가 done을
         # 관측한 시점에는 정리가 보장돼야 한다
         if job.cleanup_dir is not None:
             shutil.rmtree(job.cleanup_dir, ignore_errors=True)
-        job.stage = None
-        job.progress = None
-        job.finished_at = time.time()
-        job.status = "error" if job.error is not None else "done"
+        with self._state_lock:
+            self.check_health()
+            if self._failure is not None:
+                return
+            job.result = result
+            job.error = error
+            job.stage = None
+            job.progress = None
+            job.finished_at = time.time()
+            job.status = "error" if error is not None else "done"

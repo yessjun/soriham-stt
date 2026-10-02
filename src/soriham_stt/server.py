@@ -8,6 +8,7 @@ from collections.abc import Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import FastAPI, Form, HTTPException, UploadFile
 
@@ -48,8 +49,7 @@ def create_app(
 
     def run(job: Job) -> JobResult:
         def report(stage: JobStage, ratio: float | None) -> None:
-            job.stage = stage
-            job.progress = ratio
+            worker.report(job, stage, ratio)
 
         return run_job(job, get_backend(), hf_token=cfg.hf_token, on_progress=report)
 
@@ -64,6 +64,8 @@ def create_app(
         worker.shutdown()
 
     app = FastAPI(title="soriham-stt", version=soriham_stt.__version__, lifespan=lifespan)
+    app.state.worker = worker
+    app.state.store = store
 
     @app.post("/jobs", response_model=JobCreateResponse)
     async def create_job(
@@ -72,11 +74,22 @@ def create_app(
         model: Annotated[str | None, Form()] = None,
         language: Annotated[str | None, Form()] = None,
         diarize: Annotated[bool, Form()] = True,
+        request_id: Annotated[UUID | None, Form()] = None,
+        timeout_sec: Annotated[float, Form(gt=0, allow_inf_nan=False)] = 3600.0,
     ) -> JobCreateResponse:
         if (file is None) == (path is None):
             raise HTTPException(422, "file과 path 중 정확히 하나를 지정해야 합니다")
 
-        job_id = new_job_id()
+        job_id = request_id.hex if request_id else new_job_id()
+        params = JobParams(model=model or cfg.default_model, language=language, diarize=diarize)
+        if existing := store.get(job_id):
+            if existing.params != params or (
+                path is not None and Path(path).resolve() != existing.audio_path
+            ):
+                raise HTTPException(409, "같은 요청 ID에 다른 처리 조건을 지정할 수 없습니다")
+            return JobCreateResponse(job_id=job_id)
+        if reason := worker.check_available():
+            raise HTTPException(503, reason)
         cleanup_dir: Path | None = None
         if path is not None:
             audio_path = _validate_shared_path(path, cfg)
@@ -96,14 +109,21 @@ def create_app(
         job = Job(
             id=job_id,
             audio_path=audio_path,
-            params=JobParams(model=model or cfg.default_model, language=language, diarize=diarize),
+            params=params,
             cleanup_dir=cleanup_dir,
+            timeout_sec=timeout_sec,
         )
-        worker.submit(job)
+        try:
+            worker.submit(job)
+        except RuntimeError as exc:
+            if cleanup_dir is not None:
+                shutil.rmtree(cleanup_dir, ignore_errors=True)
+            raise HTTPException(503, str(exc)) from exc
         return JobCreateResponse(job_id=job_id)
 
     @app.get("/jobs/{job_id}", response_model=JobStatusResponse)
     async def get_job(job_id: str) -> JobStatusResponse:
+        worker.check_health()
         job = store.get(job_id)
         if job is None:
             raise HTTPException(404, "잡이 없습니다")
@@ -117,6 +137,8 @@ def create_app(
 
     @app.get("/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
+        if reason := worker.check_health():
+            raise HTTPException(503, reason)
         backend = backend_holder.get("backend")
         versions = {"soriham-stt": soriham_stt.__version__}
         if backend is not None:
